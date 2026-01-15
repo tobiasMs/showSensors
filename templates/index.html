@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPU6050 3D + Movement</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a1a1a; color: white; font-family: monospace; }
+        #info { position: absolute; top: 10px; left: 10px; padding: 15px; background: rgba(0,0,0,0.7); border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>SENSOR STATUS</h3>
+        Rotasi (Deg): <span id="rot">0, 0, 0</span><br>
+        Accel (G): <span id="acc">0, 0, 0</span>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        let scene, camera, renderer, cube;
+        
+        // Variabel Fisika
+        let velocity = { x: 0, y: 0, z: 0 };
+        let position = { x: 0, y: 0, z: 0 };
+
+        function init() {
+            // Setup Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x202020);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 3, 10); // Posisi kamera agak mundur
+            camera.lookAt(0, 0, 0); // Selalu lihat ke tengah (0,0,0)
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
+
+            // Object Cube
+            const geometry = new THREE.BoxGeometry(4, 0.5, 2);
+            const material = new THREE.MeshLambertMaterial({ color: 0x00ffcc });
+            cube = new THREE.Mesh(geometry, material);
+            
+            const axesHelper = new THREE.AxesHelper(5);
+            cube.add(axesHelper);
+            scene.add(cube);
+
+            // Grid Helper (Lantai)
+            const grid = new THREE.GridHelper(30, 30, 0x555555, 0x333333);
+            scene.add(grid);
+
+            animate();
+        }
+
+        async function fetchData() {
+            try {
+                const response = await fetch('/data');
+                const data = await response.json();
+
+                // 1. ROTASI
+                const toRad = Math.PI / 180;
+                cube.rotation.x = data.pitch * toRad;
+                cube.rotation.z = -data.roll * toRad; 
+                cube.rotation.y = -data.yaw * toRad;
+
+                // 2. POSISI DENGAN PENGAMAN (SAFETY)
+                const sens = 3.0; 
+
+                // Filter lonjakan (Jika getaran > 2.0 G, abaikan/anggap noise ketukan)
+                let inputX = (Math.abs(data.ax) > 2.0) ? 0 : data.ax;
+                let inputY = (Math.abs(data.az) > 2.0) ? 0 : data.az; // Mapping vertikal
+                let inputZ = (Math.abs(data.ay) > 2.0) ? 0 : data.ay;
+
+                // Tambah Velocity
+                velocity.x += inputX * sens;
+                velocity.y += inputY * sens; 
+                velocity.z += inputZ * sens; 
+
+                // --- PENGAMAN 1: SPEED LIMITER (Maksimal kecepatan) ---
+                const maxSpeed = 1.5; 
+                velocity.x = Math.max(-maxSpeed, Math.min(maxSpeed, velocity.x));
+                velocity.y = Math.max(-maxSpeed, Math.min(maxSpeed, velocity.y));
+                velocity.z = Math.max(-maxSpeed, Math.min(maxSpeed, velocity.z));
+
+                // Update Posisi
+                position.x += velocity.x * 0.1;
+                position.y += velocity.y * 0.1;
+                position.z += velocity.z * 0.1;
+
+                // --- PENGAMAN 2: PAGAR PEMBATAS (Agar tidak keluar layar) ---
+                // Box tidak boleh gerak lebih dari 8 satuan dari tengah
+                const bounds = 8.0; 
+                position.x = Math.max(-bounds, Math.min(bounds, position.x));
+                position.y = Math.max(-bounds, Math.min(bounds, position.y));
+                position.z = Math.max(-bounds, Math.min(bounds, position.z));
+
+                // Damping (Rem angin)
+                velocity.x *= 0.90;
+                velocity.y *= 0.90;
+                velocity.z *= 0.90;
+
+                // Return to Center (Pegas)
+                // Ini yang membuat box selalu kembali ke posisi awal (0,0,0)
+                position.x *= 0.95;
+                position.y *= 0.95;
+                position.z *= 0.95;
+
+                // Terapkan posisi
+                cube.position.set(position.x, position.y, position.z);
+
+                // Update Info
+                document.getElementById('rot').innerText = 
+                    `${data.pitch.toFixed(1)}, ${data.roll.toFixed(1)}, ${data.yaw.toFixed(1)}`;
+                document.getElementById('acc').innerText = 
+                    `X:${data.ax.toFixed(2)}, Y:${data.ay.toFixed(2)}, Z:${data.az.toFixed(2)}`;
+
+            } catch (error) { }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            fetchData();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+    </script>
+</body>
+</html>
