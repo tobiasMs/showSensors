@@ -67,6 +67,7 @@
             try {
                 const response = await fetch('/data');
                 const data = await response.json();
+                console.log(data);
 
                 // 1. ROTASI
                 const toRad = Math.PI / 180;
@@ -78,9 +79,12 @@
                 const sens = 3.0; 
 
                 // Filter lonjakan (Jika getaran > 2.0 G, abaikan/anggap noise ketukan)
-                let inputX = (Math.abs(data.ax) > 2.0) ? 0 : data.ax;
-                let inputY = (Math.abs(data.az) > 2.0) ? 0 : data.az; // Mapping vertikal
-                let inputZ = (Math.abs(data.ay) > 2.0) ? 0 : data.ay;
+                // let inputX = (Math.abs(data.ax) > 2.0) ? 0 : data.ax;
+                // let inputY = (Math.abs(data.az) > 2.0) ? 0 : data.az; // Mapping vertikal
+                // let inputZ = (Math.abs(data.ay) > 2.0) ? 0 : data.ay;
+                let inputX = data.ax;
+                let inputY = data.az; // Mapping vertikal
+                let inputZ = data.ay;
 
                 // Tambah Velocity
                 velocity.x += inputX * sens;
@@ -98,9 +102,8 @@
                 position.y += velocity.y * 0.1;
                 position.z += velocity.z * 0.1;
 
-                // --- PENGAMAN 2: PAGAR PEMBATAS (Agar tidak keluar layar) ---
                 // Box tidak boleh gerak lebih dari 8 satuan dari tengah
-                const bounds = 8.0; 
+                const bounds = 10.0; 
                 position.x = Math.max(-bounds, Math.min(bounds, position.x));
                 position.y = Math.max(-bounds, Math.min(bounds, position.y));
                 position.z = Math.max(-bounds, Math.min(bounds, position.z));
